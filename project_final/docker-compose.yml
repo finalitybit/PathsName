@@ -1,0 +1,111 @@
+services:
+  mongodb:
+    image: mongo:latest
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongopass
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  mongo-express:
+    image: mongo-express:latest
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongopass
+      ME_CONFIG_MONGODB_URL: mongodb://admin:mongopass@mongodb:27017/
+    depends_on:
+      - mongodb
+    networks:
+      - app-network  # Добавлено
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: rabbitpass
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - app-network  # Добавлено
+
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network  # Добавлено
+
+  telegram_bot:
+    image: telegram_bot
+    build:
+      context: .
+      dockerfile: telegram_bot/Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - redis
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASS=rabbitpass
+      - RABBITMQ_VHOST=/
+      - QUEUE_NAME=path_queue
+      - REDIS_URL=redis://redis:6379/0
+      - ADMIN_ID=588389
+      - LOG_DIRECTORY=/app/logs
+      - TZ=Europe/Moscow
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - app-network
+
+  consumer:
+    image: consumer
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - mongodb
+    environment:
+      - MONGODB_URI=mongodb://admin:mongopass@mongodb:27017/paths_db?authSource=admin
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASS=rabbitpass
+      - RABBITMQ_VHOST=/
+      - QUEUE_NAME=path_queue
+      - LOG_DIRECTORY=/app/logs
+      - TZ=Europe/Moscow
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - app-network
+
+volumes:
+  mongodb_data:
+  rabbitmq_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge
